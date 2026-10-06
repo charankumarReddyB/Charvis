@@ -106,6 +106,20 @@ from tools.planner import (
     set_task_planner,
     set_task_store,
 )
+from tools.runtime import (
+    DisableStartupTool,
+    EnableStartupTool,
+    GetRuntimeHealthTool,
+    GetRuntimeStatusTool,
+    GetStartupStatusTool,
+    RestartRuntimeTool,
+    StartRuntimeTool,
+    StopRuntimeTool,
+    get_runtime_manager,
+    get_startup_manager,
+    set_runtime_manager,
+    set_startup_manager,
+)
 
 
 __all__ = [
@@ -200,6 +214,18 @@ __all__ = [
     "set_task_planner",
     "get_task_executor",
     "set_task_executor",
+    "GetRuntimeStatusTool",
+    "GetRuntimeHealthTool",
+    "GetStartupStatusTool",
+    "StopRuntimeTool",
+    "RestartRuntimeTool",
+    "EnableStartupTool",
+    "DisableStartupTool",
+    "StartRuntimeTool",
+    "get_runtime_manager",
+    "set_runtime_manager",
+    "get_startup_manager",
+    "set_startup_manager",
     "ToolRegistry",
     "ToolRegistryError",
     "ToolRouter",

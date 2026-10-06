@@ -117,6 +117,18 @@ class BrowserController:
         except Exception as err:
             logger.debug("Error while cancelling download: %s", err)
 
+    @property
+    def _current_page(self) -> Optional[object]:
+        return self._page
+
+    @_current_page.setter
+    def _current_page(self, val: Optional[object]) -> None:
+        self._page = val
+
+    def close(self) -> None:
+        """Alias for stop() to support standard lifecycle closing."""
+        self.stop()
+
     def stop(self) -> None:
         """Close page, context, and Playwright driver resources."""
         logger.info("Stopping controlled browser session.")
@@ -134,6 +146,13 @@ class BrowserController:
                 except Exception:
                     pass
                 self._context = None
+
+            if hasattr(self, "_browser") and getattr(self, "_browser") is not None:
+                try:
+                    self._browser.close()
+                except Exception:
+                    pass
+                self._browser = None
 
             if self._playwright is not None:
                 try:

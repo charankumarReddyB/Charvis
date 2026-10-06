@@ -15,6 +15,31 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _INITIALIZED = False
 
 
+import re
+
+class SensitiveDataFilter(logging.Filter):
+    """
+    Sanitizes log records to prevent accidental credential, token, or secret exposure (Phase 17).
+    Redacts patterns matching API keys, passwords, bearer tokens, pins, and private keys.
+    """
+    PATTERNS = [
+        (re.compile(r'(?i)(api[_-]?key|secret|token|password|passwd|pwd|auth|authorization)\s*[:=]\s*["\']?([^"\'\s,;]+)["\']?'), r'\1="[REDACTED]"'),
+        (re.compile(r'(?i)(bearer\s+)([a-zA-Z0-9_\-\.]{10,})'), r'\1[REDACTED]'),
+        (re.compile(r'(?i)(session_token)\s*[:=]\s*["\']?([^"\'\s,;]+)["\']?'), r'\1="[REDACTED]"'),
+        (re.compile(r'(?i)(cvv|pin|otp)\s*[:=]\s*["\']?(\d+)["\']?'), r'\1="[REDACTED]"'),
+        (re.compile(r'\b(sk-[a-zA-Z0-9_\-]{20,})\b'), r'[REDACTED KEY]'),
+        (re.compile(r'-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+ PRIVATE KEY-----'), r'[REDACTED PRIVATE KEY]'),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            msg = record.msg
+            for pattern, replacement in self.PATTERNS:
+                msg = pattern.sub(replacement, msg)
+            record.msg = msg
+        return True
+
+
 def setup_logging(settings: Optional[Settings] = None, force: bool = False) -> logging.Logger:
     """
     Initialize the root logging system for CHARVIS.
@@ -41,11 +66,13 @@ def setup_logging(settings: Optional[Settings] = None, force: bool = False) -> l
     root_logger.handlers.clear()
 
     formatter = logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT)
+    data_filter = SensitiveDataFilter()
 
     # Console Handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(numeric_level)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(data_filter)
     root_logger.addHandler(console_handler)
 
     # Rotating File Handler (10MB max size, keeping up to 5 backups)
@@ -57,6 +84,7 @@ def setup_logging(settings: Optional[Settings] = None, force: bool = False) -> l
     )
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
+    file_handler.addFilter(data_filter)
     root_logger.addHandler(file_handler)
 
     _INITIALIZED = True

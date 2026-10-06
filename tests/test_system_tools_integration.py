@@ -41,7 +41,7 @@ def test_registry_contains_all_twenty_eight_tools_by_default() -> None:
     brain = AIBrain(provider=MockProvider([]))
     tool_names = [t.name for t in brain.registry.list_tools()]
 
-    assert len(tool_names) == 68
+    assert len(tool_names) == 75
     assert len(tool_names) >= 28
 
     expected_phase7_tools = [

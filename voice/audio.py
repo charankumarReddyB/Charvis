@@ -7,6 +7,7 @@ cleanup and zero background listening.
 from __future__ import annotations
 
 import io
+import threading
 import time
 import wave
 from typing import Optional
@@ -56,11 +57,19 @@ class AudioCapture:
             logger.warning("Microphone availability check failed: %s", err)
             return False
 
+    def stop(self) -> None:
+        """Immediately stop any active recording and release microphone streams."""
+        try:
+            sd.stop()
+        except Exception as err:
+            logger.debug("sounddevice stop notice: %s", err)
+
     def record_audio(
         self,
         duration: float = 5.0,
         sample_rate: Optional[int] = None,
         channels: int = 1,
+        cancel_event: Optional[threading.Event] = None,
     ) -> bytes:
         """Record a single bounded audio snippet and return standard WAV-encoded bytes.
 
@@ -68,12 +77,14 @@ class AudioCapture:
             duration: Maximum recording duration in seconds (0.5 to 30.0).
             sample_rate: Audio sampling rate in Hz (defaults to 16000).
             channels: Number of audio channels (defaults to 1 mono).
+            cancel_event: Optional event that cancels recording immediately if set.
 
         Returns:
             bytes: Complete WAV audio file bytes.
 
         Raises:
             MicrophoneUnavailableError: If no microphone device is found.
+            NoSpeechDetectedError: If recording was cancelled.
             VoiceError: If recording fails.
         """
         if not self.is_microphone_available():
@@ -87,17 +98,38 @@ class AudioCapture:
         logger.info("Recording microphone audio (duration: %.1fs, rate: %dHz)", clamped_duration, rate)
 
         try:
-            # Record 16-bit signed integer audio
-            audio_data = sd.rec(
-                total_frames,
-                samplerate=rate,
-                channels=channels,
-                dtype="int16",
-                blocking=True,
-            )
+            if cancel_event is not None:
+                audio_data = sd.rec(
+                    total_frames,
+                    samplerate=rate,
+                    channels=channels,
+                    dtype="int16",
+                    blocking=False,
+                )
+                start_time = time.time()
+                while time.time() - start_time < clamped_duration:
+                    if cancel_event.is_set():
+                        self.stop()
+                        logger.info("Microphone recording was cancelled by user.")
+                        raise NoSpeechDetectedError("Recording was cancelled.")
+                    time.sleep(0.05)
+                sd.wait()
+            else:
+                # Record 16-bit signed integer audio
+                audio_data = sd.rec(
+                    total_frames,
+                    samplerate=rate,
+                    channels=channels,
+                    dtype="int16",
+                    blocking=True,
+                )
+        except NoSpeechDetectedError:
+            raise
         except Exception as err:
             logger.error("Audio recording failed during sounddevice.rec: %s", err)
             raise VoiceError(f"Failed to record audio from microphone: {err}") from err
+        finally:
+            self.stop()
 
         # Encode PCM data into in-memory standard WAV
         wav_buffer = io.BytesIO()

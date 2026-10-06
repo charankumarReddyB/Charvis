@@ -85,6 +85,7 @@ class SidebarWidget(ttk.Frame):
 
         # 2. Nav Items
         nav_items = [
+            (AppView.ASSISTANT, "🤖  Assistant"),
             (AppView.CHAT, "💬  Chat"),
             (AppView.TASKS, "📋  Tasks"),
             (AppView.MEMORY, "🧠  Memory"),

@@ -51,6 +51,7 @@ class WakeWordEngine:
         tts_provider: Optional[BaseTTSProvider] = None,
         settings: Optional[Settings] = None,
         confirmation_callback: Optional[Callable[[str, Dict[str, Any], RiskLevel, Optional[str]], bool]] = None,
+        on_wake_detected: Optional[Callable[[], None]] = None,
     ) -> None:
         self.settings = settings or get_settings()
         if brain is None:
@@ -63,10 +64,27 @@ class WakeWordEngine:
         self.stt_provider = stt_provider or get_stt_provider()
         self.tts_provider = tts_provider or get_tts_provider()
         self.confirmation_callback = confirmation_callback
+        self.on_wake_detected = on_wake_detected
 
         self._state: WakeWordState = WakeWordState.STOPPED
         self._last_error: Optional[str] = None
         self._activation_response: str = "Yes?"
+
+    @property
+    def is_running(self) -> bool:
+        """Return True if the engine is running (not in STOPPED state)."""
+        return self._state != WakeWordState.STOPPED
+
+    @property
+    def _running(self) -> bool:
+        return self.is_running
+
+    @_running.setter
+    def _running(self, val: bool) -> None:
+        if not val:
+            self._state = WakeWordState.STOPPED
+        else:
+            self._state = WakeWordState.STANDBY
 
     @property
     def state(self) -> WakeWordState:
@@ -110,8 +128,11 @@ class WakeWordEngine:
         if self._state == WakeWordState.STOPPED:
             return
 
-        self.detector.stop()
-        self.transition_to(WakeWordState.STOPPED)
+        try:
+            self.detector.stop()
+        except Exception as e:
+            logger.debug("Exception stopping wake word detector: %s", e)
+        self._state = WakeWordState.STOPPED
         logger.info("WakeWordEngine stopped successfully")
 
     def strip_wake_phrase(self, text: str) -> str:
@@ -146,6 +167,13 @@ class WakeWordEngine:
             return False
 
         logger.info("Wake word detected in audio frame")
+        if self.on_wake_detected is not None:
+            try:
+                self.on_wake_detected()
+            except Exception as cb_err:
+                logger.error("Error in on_wake_detected callback: %s", cb_err)
+            return True
+
         self.handle_wake_detection()
         return True
 

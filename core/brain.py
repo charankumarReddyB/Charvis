@@ -97,11 +97,21 @@ from tools.planner import (
     PauseTaskTool,
     ResumeTaskTool,
     RunTaskTool,
+    TaskStore,
     get_task_executor,
     get_task_planner,
     get_task_store,
     set_task_executor,
     set_task_planner,
+)
+from tools.runtime import (
+    DisableStartupTool,
+    EnableStartupTool,
+    GetRuntimeHealthTool,
+    GetRuntimeStatusTool,
+    GetStartupStatusTool,
+    RestartRuntimeTool,
+    StopRuntimeTool,
 )
 from memory.manager import MemoryManager
 from planner.executor import TaskExecutor
@@ -188,7 +198,19 @@ PHASE 12 CAPABILITIES & RESTRICTIONS:
   66. cancel_task: Cancels an active or paused task cleanly.
   67. get_task_status: Returns detailed execution status, step progression, errors, and logs of a task.
   68. list_tasks: Lists in-memory tasks optionally filtered by status.
+  69. get_runtime_status: Checks current background runtime state, PID, version, and uptime.
+  70. get_runtime_health: Inspects operational health across all CHARVIS subsystems.
+  71. get_startup_status: Checks Windows startup integration status.
+  72. stop_runtime: Gracefully shuts down the background runtime (requires user confirmation).
+  73. restart_runtime: Restarts the background runtime (requires user confirmation).
+  74. enable_startup: Enables CHARVIS to launch automatically with Windows (requires user confirmation).
+  75. disable_startup: Disables CHARVIS automatic Windows startup (requires user confirmation).
 - IMPORTANT SAFETY & PERCEPTION BOUNDARIES:
+  - PHASE 16 BACKGROUND RUNTIME & STARTUP GUARDRAILS:
+    - Running in the background does NOT grant autonomous decision-making or continuous automation.
+    - Starting in the background does NOT enable wake-word or microphone listening by default.
+    - Windows startup integration is strictly user-controlled and MUST NOT be enabled without explicit confirmation.
+    - Shutdown and restart must never terminate unrelated processes or bypass confirmation.
   - PHASE 14 MULTI-STEP TASK PLANNING & EXECUTION GUARDRAILS:
     - Multi-step tasks must be decomposed into discrete, sequential steps using only registered tools.
     - The planner is NEVER a permission system and cannot bypass ToolRouter or SafetyManager.
@@ -318,6 +340,13 @@ class AIBrain:
             self.registry.register(CancelTaskTool())
             self.registry.register(GetTaskStatusTool())
             self.registry.register(ListTasksTool())
+            self.registry.register(GetRuntimeStatusTool())
+            self.registry.register(GetRuntimeHealthTool())
+            self.registry.register(GetStartupStatusTool())
+            self.registry.register(StopRuntimeTool())
+            self.registry.register(RestartRuntimeTool())
+            self.registry.register(EnableStartupTool())
+            self.registry.register(DisableStartupTool())
 
         self.safety_manager = safety_manager or SafetyManager()
         self.router = ToolRouter(self.registry, self.safety_manager)

@@ -27,6 +27,7 @@ from gui.widgets.task_panel import TaskPanelWidget
 from gui.widgets.memory_view import MemoryViewWidget
 from gui.widgets.settings_view import SettingsViewWidget
 from gui.widgets.confirmation import ConfirmationDialog
+from gui.widgets.assistant import AssistantViewWidget
 
 logger = logging.getLogger("charvis.gui")
 
@@ -36,10 +37,17 @@ class CharvisApp:
     Main CHARVIS Desktop Application.
     """
 
-    def __init__(self, root: Optional[tk.Tk] = None):
+    def __init__(
+        self,
+        root: Optional[tk.Tk] = None,
+        minimize_to_tray: bool = False,
+        tray_manager: Optional[Any] = None,
+    ):
         self.settings = get_settings()
         self._owns_root = root is None
         self.root = root or tk.Tk()
+        self.minimize_to_tray = minimize_to_tray or (tray_manager is not None)
+        self.tray_manager = tray_manager
 
         # Thread-safe UI dispatch queue
         self._ui_queue: queue.Queue[Callable[[], None]] = queue.Queue()
@@ -111,6 +119,12 @@ class CharvisApp:
 
         # Initialize Views
         self.views: Dict[AppView, tk.Widget] = {
+            AppView.ASSISTANT: AssistantViewWidget(
+                self.deck,
+                state=self.state,
+                controller=self.controller,
+                on_toggle_compact=self.toggle_compact_mode,
+            ),
             AppView.CHAT: ChatViewWidget(
                 self.deck,
                 state=self.state,
@@ -136,7 +150,45 @@ class CharvisApp:
 
         # Pack initial view
         self._current_view_widget: Optional[tk.Widget] = None
-        self.switch_view(self.state.current_view)
+        self._is_compact: bool = False
+        self._normal_geometry: Optional[str] = None
+
+        if getattr(self.settings, "gui_compact_mode", False):
+            self.toggle_compact_mode(True)
+        else:
+            self.switch_view(self.state.current_view)
+
+    def toggle_compact_mode(self, enabled: Optional[bool] = None) -> None:
+        """Switch between standard full GUI view and compact assistant surface."""
+        if enabled is None:
+            self._is_compact = not self._is_compact
+        else:
+            self._is_compact = enabled
+
+        if self._is_compact:
+            self._normal_geometry = self.root.geometry()
+            self.sidebar.pack_forget()
+            self.separator.pack_forget()
+            self.switch_view(AppView.ASSISTANT)
+            self.root.minsize(380, 480)
+            self.root.geometry("420x540")
+            if getattr(self.settings, "gui_always_on_top", False):
+                try:
+                    self.root.wm_attributes("-topmost", True)
+                except Exception:
+                    pass
+        else:
+            try:
+                self.root.wm_attributes("-topmost", False)
+            except Exception:
+                pass
+            self.sidebar.pack(side=tk.LEFT, fill=tk.Y, before=self.deck)
+            self.separator.pack(side=tk.LEFT, fill=tk.Y, before=self.deck)
+            self.root.minsize(840, 520)
+            if self._normal_geometry:
+                self.root.geometry(self._normal_geometry)
+            else:
+                self.root.geometry(f"{self.settings.gui_window_width}x{self.settings.gui_window_height}")
 
     def switch_view(self, view: AppView) -> None:
         """Switch the visible view in the view deck."""
@@ -201,8 +253,35 @@ class CharvisApp:
             self._active_dialog = None
             self.state.clear_confirmation()
 
+    def show(self) -> None:
+        """Restore or un-minimize and focus the GUI window."""
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+        except Exception as e:
+            logger.debug("Error restoring window: %s", e)
+
     def on_close(self) -> None:
-        """Clean shutdown when closing the desktop window."""
+        """Handle window close: withdraw to tray if tray is active, else shutdown."""
+        if self.minimize_to_tray and self.tray_manager is not None:
+            logger.info("Window close requested: minimizing to system tray.")
+            try:
+                self.root.withdraw()
+            except Exception as e:
+                logger.debug("Error withdrawing window to tray: %s", e)
+            return
+
+        self.exit_app()
+
+    def exit_app(self) -> None:
+        """Clean shutdown when completely exiting CHARVIS application."""
+        if self.tray_manager is not None:
+            try:
+                self.tray_manager.stop()
+            except Exception:
+                pass
+
         try:
             self.controller.shutdown()
         except Exception as err:

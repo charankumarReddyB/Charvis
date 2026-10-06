@@ -142,9 +142,9 @@ def test_cancel_task_tool(planner_tools_fixture):
 
 
 def test_brain_registration_and_tools_count():
-    """Verify that AIBrain automatically registers all 68 tools including the 7 Phase 14 tools."""
+    """Verify that AIBrain automatically registers all 75 tools including Phase 14 and Phase 16 tools."""
     brain = AIBrain(provider=MockProvider())
-    assert brain.registry.count() == 68
+    assert brain.registry.count() == 75
 
     planner_tools = [
         "create_task",

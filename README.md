@@ -4,7 +4,8 @@ CHARVIS is a personal AI computer assistant built for Windows. The vision is an 
 
 ---
 
-## Current Status: Phase 15 (Desktop GUI)
+## Current Status: Phase 19 (Activation Experience & Assistant UI)
+Version: 0.19.0 | Tool Count: 75
 
 - [x] **Phase 1: Project foundation and configuration** *(Complete)*
 - [x] **Phase 2: Text-based AI assistant** *(Complete)*
@@ -22,9 +23,10 @@ CHARVIS is a personal AI computer assistant built for Windows. The vision is an 
 - [x] **Phase 13: Memory system** *(Complete)*
 - [x] **Phase 14: Multi-step task planning and execution** *(Complete)*
 - [x] **Phase 15: Desktop GUI (Tkinter + ttk)** *(Complete)*
-- [ ] Phase 16: Background operation and startup
-- [ ] Phase 17: Testing, security hardening and performance optimization
-- [ ] Phase 18: Final packaging and installation
+- [x] **Phase 16: Background Runtime & Windows Startup** *(Complete)*
+- [x] **Phase 17: Hardening, Reliability & Performance** *(Complete)*
+- [x] **Phase 18: Packaging, System Tray & Startup UX** *(Complete)*
+- [x] **Phase 19: Activation Experience & Assistant UI** *(Complete)*
 
 
 ---
@@ -32,54 +34,33 @@ CHARVIS is a personal AI computer assistant built for Windows. The vision is an 
 ## System Architecture
 
 ```
-User Voice / Text CLI ("voice" mode / "What is on my screen?" / "Open Notepad")
+User Voice / Text CLI / Desktop GUI / Windows Startup
        │
        ▼
- [voice/audio.py: AudioCapture] ──► [voice/stt.py: STTProvider]
-       │
-       ▼
-   [main.py]  (Interactive CLI Loop, Confirmation Prompts, Voice Mode)
-       │
-       ▼
-  [core/brain.py: AIBrain]  (Cognitive Loop with 68 Registered Tools)
-       │
-       ├───────────────────────────────┐
-       ▼                               ▼
- [core/providers/base.py]     [tools/router.py: ToolRouter]
-       │                               │
-       ▼                               ├─► [core/safety.py: SafetyManager]
- [core/providers/openai_provider.py]    │
-       │                               ├─► [tools/calculator.py: CalculatorTool]
-       ▼                               │
-  Cloud LLM                            ├─► [tools/applications.py] (open/close apps)
-                                       │
-                                       ├─► [tools/keyboard.py] (type_text, press_key, hotkey)
-                                       │
-                                       ├─► [tools/mouse.py] (move_mouse, click, double_click, scroll)
-                                       │
-                                       ├─► [tools/filesystem.py] ──► [filesystem/sandbox.py]
-                                       │       (read/write/list/search/create/delete)
-                                       │
-                                       ├─► [tools/system.py]
-                                       │       (info, cpu, ram, disk, battery, uptime, net, lock, shutdown, restart)
-                                       │
-                                       ├─► [tools/voice.py]
-                                       │       (listen, speak)
-                                       │
-                                       ├─► [tools/wakeword.py]
-                                       │       (get_wakeword_status, enable_wakeword, disable_wakeword)
-                                       │
-                                       ├─► [tools/browser.py] ──► [browser/controller.py] ──► Playwright
-                                       │       (open, navigate, info, click, type, back, forward, reload, url, close)
-                                       │
-                                       ├─► [tools/vision.py] ──► [vision/analyzer.py]
-                                       │       (capture, OCR, find visual elements, describe screen)
-                                       │
-                                       ├─► [tools/memory.py] ──► [memory/manager.py] ──► SQLite
-                                       │       (remember, recall, list, update, forget, clear session)
-                                       │
-                                       └─► [tools/planner.py] ──► [planner/executor.py]
-                                               (create_task, run_task, pause, resume, cancel, status, list)
+ [gui/app.py: CharvisApp] ──► [runtime/client.py: RuntimeClient]
+                                    │ (Localhost TCP IPC: 127.0.0.1)
+                                    ▼
+                     [runtime/ipc.py: IPCServer]
+                                    │
+                                    ▼
+                     [runtime/controller.py: RuntimeController]
+                                    │
+       ┌────────────────────────────┴───────────────────────────┐
+       ▼                                                        ▼
+ [voice/audio.py] ──► [voice/stt.py]                   [core/brain.py: AIBrain]
+                                                                │ (75 Registered Tools)
+                                              ┌─────────────────┴─────────────────┐
+                                              ▼                                   ▼
+                                       Cloud/Local LLM               [tools/router.py: ToolRouter]
+                                                                                  │
+                                                                                  ├─► [core/safety.py: SafetyManager]
+                                                                                  ├─► Tools: Calculator, Apps, Keyboard,
+                                                                                  │   Mouse, Filesystem, System Control,
+                                                                                  │   Voice I/O, Wake Word, Browser,
+                                                                                  │   Vision/OCR, Memory, Task Planner,
+                                                                                  │   and Runtime/Startup Lifecycle
+                                                                                  ▼
+                                                                     Authoritative Execution
        │
        ▼
  [voice/tts.py: TTSProvider] ──► Speaker Output
@@ -657,7 +638,234 @@ python main.py -g
   - **Chat (`gui/widgets/chat.py`)**: Rich scrollable conversation transcript displaying user prompts, assistant replies, tool activities, and system alerts.
   - **Task Planner (`gui/widgets/task_panel.py`)**: Real-time progress bar, step-by-step task breakdown, and live controls (Generate Plan, Run, Pause, Resume, Cancel).
   - **Memory Explorer (`gui/widgets/memory_view.py`)**: Strictly read-only viewer for searching and inspecting persistent memories without risk of SQLite DB corruption.
-  - **Settings Dashboard (`gui/widgets/settings_view.py`)**: System diagnostic overview with all API keys and credentials securely masked.
+  - **Settings Dashboard (`gui/widgets/settings_view.py`)**: System diagnostic overview, Runtime & Windows Startup controls card, and masked credentials.
+
+---
+
+## Phase 16: Background Runtime & Windows Startup
+
+Phase 16 introduces a safe, controlled background runtime for CHARVIS with optional user-controlled Windows startup integration.
+
+### 1. Launching Background Runtime
+
+```powershell
+# Launch the CHARVIS Background Runtime Daemon
+python main.py --background
+
+# Or with shorthand flag
+python main.py -b
+
+# Launch Background Runtime and attach the Desktop GUI
+python main.py --gui --background
+```
+
+### 2. Architecture & Authoritative Core
+
+```
+Windows / Startup
+       │
+       ▼
+CHARVIS Background Runtime (Daemon)
+       │
+Runtime Controller (Lifecycle, Health, Heartbeat)
+       │
+Authoritative CHARVIS Core (AIBrain, ToolRouter, SafetyManager, Memory, Planner)
+       ▲
+       │ Localhost TCP (127.0.0.1) IPC
+Runtime Client
+       ▲
+       │
+Desktop GUI (Tkinter + ttk)
+```
+
+- **Single Authoritative Core**: The GUI does NOT duplicate the AI Brain. When a background runtime is active, the GUI automatically connects as an IPC client. When no background runtime exists, the GUI uses a local in-process core or allows the user to click `[Start]` to launch the runtime.
+- **Single-Instance Enforcement (`runtime/lifecycle.py`)**: Uses a safe process metadata lockfile under `data/runtime/` recording PID, process creation time, and timestamp. Stale locks from crashed processes are safely detected and recovered without terminating unrelated processes.
+
+### 3. Localhost IPC Communication & Security
+
+- **Strict Localhost Binding**: Bound strictly to `127.0.0.1`. Binding to `0.0.0.0` or any external interface is blocked by policy and raises an immediate security exception.
+- **Allowed High-Level Operations**: `status`, `health`, `chat`, `task_create`, `task_run`, `task_pause`, `task_resume`, `task_cancel`, `voice_start`, `voice_stop`, `shutdown`, `ping`.
+- **Zero Arbitrary Tool or Code Execution**: The IPC mechanism rejects low-level tool invocation (`execute_tool`, `run_tool`), eval, shell commands, or subprocess execution. All actions must flow through the authoritative AI Brain and Tool Router subject to `SafetyManager` policies.
+- **Framing & Limits**: Framed using newline-delimited JSON with an enforced maximum message size limit (default 1MB).
+
+### 4. Explicit Runtime States & Transitions
+
+The runtime state machine (`runtime/state.py`) strictly enforces explicit transitions:
+- `STOPPED -> STARTING -> RUNNING -> STOPPING -> STOPPED`
+- `RUNNING -> PAUSED -> RUNNING`
+- `RUNNING -> DEGRADED -> RUNNING`
+- `* -> ERROR -> STOPPING -> STOPPED`
+
+Illegal transitions raise `InvalidStateTransitionError`. Idempotent shutdowns are guaranteed.
+
+### 5. Privacy & Wake-Word Invariants
+
+- **Zero Continuous Listening by Default**: CHARVIS does NOT automatically listen to the microphone merely because background mode is enabled.
+- **Wake Word Default = OFF**: Wake-word standby mode remains disabled by default upon background startup. It must be explicitly enabled by the user.
+- **No Autonomous Automation**: CHARVIS does not autonomously execute tasks in the background without explicit user request.
+- **Zero Stored Audio**: When voice or wake-word is active, audio is processed locally and discarded immediately.
+
+### 6. Transparent Windows Startup Integration
+
+- **User-Controlled**: Windows startup integration is 100% opt-in and requires explicit user action in the GUI or confirmation-required tool call.
+- **Startup Folder Method**: Uses a clean, transparent launcher script (`CHARVIS_Startup.bat`) placed in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`.
+- **Zero Stealth / Hacks**: Strictly avoids registry Run keys, scheduled tasks, Windows services, or privilege escalation.
+- **Safe Command**: Points to static arguments (`python.exe main.py --background`) with no embedded secrets or credentials.
+
+### 7. Registered Runtime Tools (Phases 3–16: 75 Total Tools)
+
+| Tool Name | Risk Level | Description |
+|---|---|---|
+| `get_runtime_status` | `SAFE` | Inspects background runtime state, version, PID, uptime, and active tasks. |
+| `get_runtime_health` | `SAFE` | Inspects operational health across brain, memory, planner, voice, browser, and IPC. |
+| `get_startup_status` | `SAFE` | Checks whether Windows startup integration is currently enabled. |
+| `stop_runtime` | `CONFIRMATION_REQUIRED` | Gracefully shuts down the background runtime. |
+| `restart_runtime` | `CONFIRMATION_REQUIRED` | Gracefully restarts the background runtime. |
+| `enable_startup` | `CONFIRMATION_REQUIRED` | Enables CHARVIS to launch automatically in the background on Windows startup. |
+| `disable_startup` | `CONFIRMATION_REQUIRED` | Removes CHARVIS from Windows startup. |
+
+### 8. Resource Cleanup & Idempotent Shutdown
+
+On shutdown:
+1. Stops accepting new IPC requests.
+2. Stops wake-word engine if active and releases microphone handles.
+3. Closes Playwright browser automation instances.
+4. Flushes SQLite memory storage and closes handles.
+5. Releases runtime instance lock cleanly.
+6. Closes IPC socket and marks state `STOPPED`.
+
+Calling `stop()` multiple times is idempotent and safe.
+
+### 9. Troubleshooting
+
+- **GUI shows "CHARVIS OFFLINE"**: The background runtime is stopped. Click `[Start]` in the Settings panel or run `python main.py --background`.
+- **Stale Lock Recovery**: If CHARVIS crashed unexpectedly, the next start automatically verifies the dead PID and safely recovers stale metadata without affecting unrelated processes.
+
+---
+
+## Phase 17: Hardening, Reliability & Performance
+
+Phase 17 hardens the entire CHARVIS system across reliability, concurrency safety, lifecycle management, IPC robustness, and bounded resource utilization without adding new tools or changing existing security boundaries.
+
+### 1. Key Hardening Improvements
+
+- **Confirmation Race Hardening & Single-Use Enforcement (`core/safety.py`)**:
+  - Every confirmation request carries a unique UUID `confirmation_id` with an explicit state machine: `PENDING` -> `APPROVED` | `DENIED` | `EXPIRED` | `CANCELLED`.
+  - All secondary transitions or double-clicks are rejected with `ConfirmationStateError`.
+  - Stale callbacks from previous tasks or expired actions cannot approve subsequent actions.
+- **Bounded Confirmation Timeout**:
+  - Configurable `confirmation_timeout_seconds` (default: 120s). Unanswered confirmations transition strictly to `EXPIRED`. Actions never execute on timeout.
+- **Task Identity & Execution Hardening (`planner/executor.py`)**:
+  - Strict step-by-step verification using unique `task_id` and `step_id`.
+  - Enforces max 15 steps, max 3 autonomous replans, max 1 retry for non-destructive transient errors.
+  - Destructive tools (`delete_file`, `shutdown_system`, etc.) are never retried automatically.
+  - Cancelled, completed, or failed tasks cannot be resumed or re-executed.
+- **Localhost IPC Hardening (`runtime/ipc.py`)**:
+  - Bound strictly to `127.0.0.1` (refuses `0.0.0.0` or external IPs).
+  - Runtime generates a random session token stored only in memory and protected local metadata.
+  - Enforced max message size limit (1MB default), bounded concurrent connections (`max_ipc_connections`), socket idle timeout, and request timeouts.
+  - Prohibited execution commands (`shell`, `eval`, `exec`, `execute_tool`, `sql`) are rejected with `SAFETY_ERROR`.
+- **GUI Reconnection State Machine (`gui/controller.py`)**:
+  - Safe lifecycle transitions: `ONLINE -> DISCONNECTED -> RECONNECTING -> ONLINE`.
+  - Exponential backoff (1s -> 2s -> 4s -> 8s -> 10s max) using responsive threading events that wake immediately upon manual trigger or app shutdown.
+- **Resource Diagnostics & Low-Frequency Monitor (`diagnostics/`)**:
+  - Bounded 5–15 second sampling interval without CPU busy-loops.
+  - Captures RSS memory, CPU usage, thread count, active workers, active tasks, and IPC connections.
+- **Graceful 13-Step Idempotent Shutdown (`runtime/controller.py`)**:
+  - Structured shutdown order: mark `STOPPING` -> reject new IPC -> cancel pending confirmations -> stop tasks -> stop voice/wake-word -> close browser -> close IPC -> close memory DB -> release single-instance lock -> mark `STOPPED`.
+- **Data Exposure & Secret Sanitization (`logger.py`)**:
+  - `SensitiveDataFilter` actively masks passwords, API keys, bearer tokens, PINs, OTPs, session tokens, and private keys across all log outputs.
+
+### 2. Configurable Resource & Safety Limits
+
+| Setting | Default | Description |
+|---|---|---|
+| `MAX_BACKGROUND_WORKERS` | `4` | Bounded thread pool limit for concurrent background requests |
+| `MAX_IPC_CONNECTIONS` | `10` | Maximum simultaneous localhost IPC client connections |
+| `RUNTIME_MAX_MESSAGE_SIZE`| `1048576` (1MB) | Maximum allowed byte size for a single incoming IPC message |
+| `CONFIRMATION_TIMEOUT_SECONDS` | `120.0` | Timeout after which pending human confirmation auto-expires |
+| `MAX_CHAT_HISTORY_ITEMS` | `1000` | Bounded conversation memory history cap |
+| `MAX_TASK_HISTORY_ITEMS` | `200` | Bounded completed/failed task execution history cap |
+| `MAX_RUNTIME_MEMORY_WARNING_MB` | `500` | Memory threshold triggering diagnostic warnings |
+| `RECONNECT_INITIAL_DELAY` | `1.0` | Initial reconnect delay for GUI in seconds |
+| `RECONNECT_MAX_DELAY` | `10.0` | Maximum exponential backoff reconnect delay in seconds |
+| `WAKE_WORD_ENABLED` | `False` | Wake-word detection remains opt-in and OFF by default |
+
+### 3. Empirical Performance Measurements
+
+Measured on Windows 11 (Intel Core, 16 logical cores, 16GB RAM):
+
+- **Idle CPU**: `1.60%` (Target: < 2.0%)
+- **Idle Memory (RSS)**: `88.59 MB`
+- **Runtime Startup Time**: `4.96 ms`
+- **Runtime Shutdown Time**: `5.02 ms` (Target: < 5.0s)
+- **GUI Init Time**: `5.15 ms`
+- **Local IPC Status Latency**: `8.32 ms` (Target: < 100 ms)
+- **Task Creation Latency**: `0.013 ms`
+- **25-Cycle Lifecycle Leak Delta**: `+1.78 MB RSS` (no handle or thread leaks)
+- **Continuous Workload Test**: 252 operations completed with 0 errors
+
+### 4. Known Limitations & Watchlist
+
+- Windows console output encoding requires UTF-8 (`PYTHONIOENCODING=utf-8`).
+- GUI reconnect backoff caps at 10 seconds; if the background runtime is intentionally terminated, the user can manually restart it from the Settings view.
+- Offline and local operations do not touch cloud providers unless explicitly authorized.
+
+---
+
+## Phase 18: Packaging, System Tray & Startup UX
+
+### 1. Windows System Tray Integration
+- **Zero-Asset Dynamic Icons**: Programmatically renders 6 distinct high-contrast 64x64 RGBA icons (Ready, Listening, Processing, Paused, Error, Offline) with shape glyphs for colorblind accessibility.
+- **Authoritative IPC Binding**: Connects exclusively via `RuntimeClient` or `RuntimeController`. Strictly prohibits direct tool execution from tray menus.
+- **8-Item Non-Destructive Menu**:
+  1. Open CHARVIS (restores/deiconifies GUI)
+  2. Voice Mode (initiates bounded voice interaction)
+  3. Wake Word (toggles Phase 9 engine state)
+  4. Pause CHARVIS (transitions runtime to PAUSED)
+  5. Resume CHARVIS (transitions runtime back to RUNNING)
+  6. Runtime Status (emits sanitized desktop notification with uptime and state)
+  7. Settings / Diagnosis (brings GUI to settings view)
+  8. Exit CHARVIS (authoritative 10-step graceful runtime shutdown)
+
+### 2. Single-Instance Desktop UX & Window Management
+- **Single Instance Guarantee**: `RuntimeLock` prevents duplicate background runtime processes. Subsequent launches of `main.py --tray` or `main.py --gui` discover and attach to the existing running instance.
+- **Window Minimize-to-Tray**: Closing the desktop GUI window withdraws/hides the window without terminating background runtime tasks or AI orchestration.
+- **Explicit Exit Separation**: Window close is decoupled from application termination. Terminating CHARVIS requires an explicit user action via the tray menu.
+
+### 3. User Activation & Keyboard Foundation
+- **Activation Orchestration**: `ActivationManager` coordinates user interaction state machine (`INACTIVE`, `ACTIVATING`, `LISTENING`, `PROCESSING`, `COMPLETED`, `CANCELLED`, `ERROR`).
+- **Safe Global Hotkey (`Ctrl + Alt + Space`)**: Native Windows `RegisterHotKey` implementation without third-party keylogger libraries. Never logs, monitors, or intercepts arbitrary keyboard input. Disabled by default for user safety.
+- **Voice & Wake Word Reuse**: Reuses Phase 8 STT/TTS and Phase 9 wake-word engines directly without creating duplicate engines or background tasks.
+
+### 4. Sanitized Desktop Notifications & Path Portability
+- **Sensitive Data Redaction**: Desktop notifications scrub API keys (`sk-...`), passwords, session tokens, and PINs via `SensitiveDataFilter`.
+- **Anti-Spam Debouncing**: Throttles rapid notification bursts across identical notification categories.
+- **Centralized Path Resolver**: `core/paths.py` eliminates all developer-specific hardcoded paths (e.g. `C:\Charan\Charvis`), enabling seamless execution from Windows Startup, arbitrary working directories, and future package installers.
+
+---
+
+## Phase 19: Activation Experience & Assistant UI
+
+Phase 19 delivers a unified, premium desktop activation pipeline and interactive assistant surface:
+
+### 1. Unified Activation Pipeline
+- **Four Cohesive Activation Sources**: Wake word (`"Hey Charvis"`), Global Hotkey (`Ctrl+Alt+Space`), GUI Assistant Button, and System Tray Voice Mode all route to a single authoritative `ActivationManager`.
+- **State Machine**: Fully deterministic transitions (`INACTIVE` → `ACTIVATING` → `LISTENING` → `PROCESSING` → `SPEAKING` → `COMPLETED` / `CANCELLED` / `ERROR`).
+- **Concurrent Activation Protection**: Rejects or ignores duplicate activation triggers while already listening, processing, or speaking.
+- **Audio Clean-up & Graceful Cancellation**: Audio capture can be cancelled mid-stream without lingering background threads or orphaned recording handles.
+
+### 2. Dedicated Assistant View & Visual Status Orb
+- **Dynamic Visual Orb**: Real-time pulsing orb indicator reflecting current assistant status:
+  - Cyan: Idle / Inactive
+  - Yellow: Activating & Readying Voice
+  - Red / Orange: Listening
+  - Purple: Processing AI Brain & Planner
+  - Green: Speaking TTS Response
+- **Full Privacy & Secret Redaction**: Transcript cards immediately redact API keys, bearer tokens, passwords, and sensitive strings before rendering on screen.
+- **Multi-Step Planner Progress**: Shows real-time progress for complex multi-step execution plans directly in the Assistant deck.
+- **Compact Floating Overlay Mode**: Toggleable compact mode with always-on-top positioning (`toggle_compact_mode`) for minimal screen footprint while keeping CHARVIS accessible.
+- **Safety Manager Single-Use Confirmations**: Confirmation prompts remain strictly tied to `SafetyManager` single-use tokens; assistant UI cannot bypass or reuse authorization.
 
 ---
 
@@ -669,18 +877,10 @@ Run the complete test suite:
 pytest -v
 ```
 
-**505 passed, 1 skipped across all subsystems.**
-- Comprehensive coverage across all 15 phases: Foundation, AI Brain, Tool Router, App Control, Safety Hardening, Mouse/Keyboard, Filesystem, System Control, Voice I/O, Wake Word, Browser, Screenshot & OCR, Vision Understanding, Memory System, Multi-Step Task Planner, and Desktop GUI.
-- 100% regression safety across all 68 registered tools.
+**671 passed, 1 skipped across all subsystems (100% pass rate).**
+- Comprehensive coverage across all 19 phases: Foundation, AI Brain, Tool Router, App Control, Safety Hardening, Mouse/Keyboard, Filesystem, System Control, Voice I/O, Wake Word, Browser, Screenshot & OCR, Vision Understanding, Memory System, Multi-Step Task Planner, Desktop GUI, Background Runtime & Startup, Hardening & Diagnostics, Packaging/System Tray/Startup UX, and Activation Experience & Assistant UI.
+- 100% regression safety across all 75 registered tools.
 - Offline mocks allow instant, deterministic test execution without hardware or cloud dependencies.
 
----
-
-## Next Development Phase: Phase 16 (Background Operation and Startup)
-
-In Phase 16, we will introduce:
-1. Windows system tray integration (minimize to tray, background standby).
-2. Windows Startup registration and auto-launch service options.
-3. Global hotkeys and background wake-word/voice monitoring while minimized.
 
 

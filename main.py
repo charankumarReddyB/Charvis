@@ -32,7 +32,7 @@ def print_banner(
         )
     else:
         app_name = str(settings_or_name) if settings_or_name else "CHARVIS"
-        version = app_version or "0.15.0"
+        version = app_version or "0.19.0"
         env = environment or "development"
         provider = "OPENAI"
         model = "gpt-4o-mini"
@@ -41,14 +41,14 @@ def print_banner(
     banner = f"""
 ============================================================
   {app_name} - AI Virtual Intelligent System (v{version})
-  Phase 15    : Desktop GUI
+  Phase 19    : Activation Experience & Assistant UI
   Environment : {env}
   Provider    : {provider} ({model})
   API Key     : {api_status}
-  Tools       : {tool_count} active (calc, apps, keyboard, mouse, fs, system, voice, wakeword, browser, vision, memory, planner)
+  Tools       : {tool_count} active (calc, apps, keyboard, mouse, fs, system, voice, wakeword, browser, vision, memory, planner, runtime)
   Platform    : {platform.system()} {platform.release()} ({platform.machine()})
   Commands    : Type 'wakeword' for wake-word mode, 'voice' for voice mode, 'exit' to quit
-                Or run with '--gui' to launch Desktop GUI
+                Flags: '--gui' (Desktop GUI), '--tray' (System Tray), '--background' (Daemon), '--status' (Inspect)
 ============================================================
 """
     print(banner)
@@ -341,12 +341,128 @@ def main() -> int:
         except Exception as e:
             logger.warning("Failed to clean up expired memories at startup: %s", e)
 
-        # Launch Desktop GUI if --gui flag is present
-        if "--gui" in sys.argv or "-g" in sys.argv:
+        # Parse CLI Flags
+        is_background = "--background" in sys.argv or "-b" in sys.argv
+        is_gui = "--gui" in sys.argv or "-g" in sys.argv
+        is_tray = "--tray" in sys.argv or "-t" in sys.argv
+        is_status = "--status" in sys.argv or "-s" in sys.argv
+
+        from runtime.client import RuntimeClient
+
+        # Handle --status query
+        if is_status:
+            client = RuntimeClient()
+            if client.is_runtime_running():
+                try:
+                    data = client.send_request("status")
+                    uptime = data.get("uptime", 0.0)
+                    print(f"CHARVIS Background Runtime: RUNNING")
+                    print(f"  State       : {data.get('state')}")
+                    print(f"  Version     : {data.get('version')}")
+                    print(f"  Uptime      : {uptime:.1f}s")
+                    print(f"  Port        : {data.get('port')}")
+                    print(f"  Health      : {data.get('health_state')}")
+                    print(f"  Active Tasks: {data.get('active_tasks')}")
+                except Exception as e:
+                    print(f"CHARVIS Background Runtime: ERROR querying status ({e})")
+            else:
+                print("CHARVIS Background Runtime: NOT RUNNING (no active instance found)")
+            return 0
+
+        # Check if an authoritative background runtime is already active
+        client = RuntimeClient()
+        runtime_already_active = client.is_runtime_running()
+
+        if is_background and not (is_gui or is_tray):
+            if runtime_already_active:
+                logger.info("CHARVIS background runtime is already active. Duplicate startup avoided.")
+                print("[Notice] CHARVIS background runtime is already running. Duplicate startup avoided.")
+                return 0
+            logger.info("Starting CHARVIS in Background Runtime mode...")
+            from runtime.controller import RuntimeController
+            controller = RuntimeController(settings=settings, brain=brain)
+            controller.start(block=True)
+            return 0
+
+        # Handle System Tray mode (--tray) or combined (--tray --gui)
+        if is_tray:
+            logger.info("Starting CHARVIS System Tray integration...")
+            from activation.manager import ActivationManager
+            from gui.tray import SystemTrayManager
+
+            local_controller = None
+            active_client = None
+
+            if runtime_already_active:
+                logger.info("Connecting System Tray to existing authoritative background runtime...")
+                active_client = client
+                activation = ActivationManager(runtime_client=active_client)
+            else:
+                logger.info("Starting local background runtime controller for System Tray...")
+                from runtime.controller import RuntimeController
+                local_controller = RuntimeController(settings=settings, brain=brain)
+                local_controller.start(block=False)
+                activation = ActivationManager(runtime_controller=local_controller)
+
+            app_ref = [None]
+
+            def open_gui_callback() -> None:
+                if app_ref[0] is not None:
+                    app_ref[0].show()
+                else:
+                    logger.info("Opening CHARVIS GUI from tray...")
+
+            tray = SystemTrayManager(
+                runtime_client=active_client,
+                runtime_controller=local_controller,
+                activation_manager=activation,
+                on_open_gui=open_gui_callback,
+            )
+
+            if is_gui:
+                from gui.app import CharvisApp
+                app = CharvisApp(tray_manager=tray, minimize_to_tray=True)
+                app_ref[0] = app
+                tray.on_exit_callback = app.exit_app
+                tray.start()
+                try:
+                    app.run()
+                finally:
+                    tray.stop()
+                    if local_controller:
+                        local_controller.stop()
+                return 0
+            else:
+                tray.start()
+                logger.info("CHARVIS is active in system tray. Press Ctrl+C in terminal to exit.")
+                try:
+                    while tray._icon is not None:
+                        time.sleep(0.5)
+                except KeyboardInterrupt:
+                    logger.info("Tray loop interrupted by user.")
+                finally:
+                    tray.stop()
+                    if local_controller:
+                        local_controller.stop()
+                return 0
+
+        # Handle Desktop GUI mode (--gui)
+        if is_gui:
             logger.info("Launching CHARVIS Desktop GUI...")
             from gui.app import CharvisApp
+
+            local_controller = None
+            if not runtime_already_active and is_background:
+                from runtime.controller import RuntimeController
+                local_controller = RuntimeController(settings=settings, brain=brain)
+                local_controller.start(block=False)
+
             app = CharvisApp()
-            app.run()
+            try:
+                app.run()
+            finally:
+                if local_controller:
+                    local_controller.stop()
             return 0
 
         try:

@@ -1,0 +1,17 @@
+{
+  "leak_test": {
+    "cycles": 25,
+    "mem_before_mb": 87.14,
+    "mem_after_mb": 88.92,
+    "mem_delta_mb": 1.78,
+    "threads_before": 23,
+    "threads_after": 24
+  },
+  "workload": {
+    "duration_seconds": 15,
+    "operations": 252,
+    "errors": 0,
+    "final_mem_mb": 90.13,
+    "final_threads": 24
+  }
+}

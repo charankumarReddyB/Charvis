@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Core Application
     app_name: str = Field(default="CHARVIS", description="Application display name")
-    app_version: str = Field(default="0.15.0", description="Application semantic version")
+    app_version: str = Field(default="0.19.0", description="Application semantic version")
 
     environment: Literal["development", "testing", "production"] = Field(
         default="development", description="Runtime environment"
@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     max_tts_length: int = Field(default=1000, ge=10, le=10000, description="Maximum characters allowed for text-to-speech")
     
     # Wake Word Settings (Phase 9)
+    wake_word_enabled: bool = Field(default=False, description="Enable wake word detection (opt-in)")
     wake_word_phrase: str = Field(default="hey charvis", description="Wake word activation phrase")
     wake_word_timeout: float = Field(default=30.0, gt=0.0, le=3600.0, description="Standby session timeout in seconds")
     wake_word_frame_duration: float = Field(default=1.0, gt=0.1, le=5.0, description="Duration in seconds of each audio frame chunk")
@@ -267,6 +268,156 @@ class Settings(BaseSettings):
     gui_theme: str = Field(default="dark", description="Default GUI theme: 'dark' or 'light'")
     gui_poll_interval_ms: int = Field(default=50, ge=10, le=500, description="Event queue polling interval in ms")
 
+    # Background Runtime & IPC Settings (Phase 16)
+    runtime_dir: Path = Field(
+        default=BASE_DIR / "data" / "runtime",
+        description="Path to runtime metadata and locks directory",
+    )
+    runtime_host: str = Field(
+        default="127.0.0.1",
+        description="Host interface for local IPC (strictly 127.0.0.1)",
+    )
+    runtime_port: int = Field(
+        default=0,
+        ge=0,
+        le=65535,
+        description="Port for local IPC server (0 = auto-allocated ephemeral port)",
+    )
+    runtime_ipc_timeout: float = Field(
+        default=10.0,
+        gt=0.1,
+        le=60.0,
+        description="Timeout in seconds for local IPC requests",
+    )
+    runtime_heartbeat_interval: float = Field(
+        default=10.0,
+        gt=1.0,
+        le=60.0,
+        description="Lightweight heartbeat interval in seconds",
+    )
+    runtime_max_message_size: int = Field(
+        default=1_048_576,
+        ge=4096,
+        le=10_485_760,
+        description="Maximum allowed IPC message size in bytes (default 1MB)",
+    )
+
+    # Phase 17: Hardening, Reliability & Performance Limits
+    confirmation_timeout_seconds: float = Field(
+        default=120.0,
+        gt=1.0,
+        le=600.0,
+        description="Timeout in seconds for confirmation requests before auto-expiring",
+    )
+    max_background_workers: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Maximum background worker threads in worker pools",
+    )
+    max_pending_gui_requests: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum concurrent pending GUI background requests",
+    )
+    max_ipc_connections: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum concurrent localhost IPC client connections",
+    )
+    max_chat_history_items: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Maximum chat history messages retained in memory",
+    )
+    max_task_history_items: int = Field(
+        default=50,
+        ge=5,
+        le=500,
+        description="Maximum completed/cancelled tasks retained in task history",
+    )
+    max_browser_pages: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum concurrent browser pages/tabs allowed",
+    )
+    max_voice_operation_time: float = Field(
+        default=30.0,
+        gt=1.0,
+        le=120.0,
+        description="Maximum duration in seconds for single voice/STT operation",
+    )
+    max_runtime_memory_warning_mb: int = Field(
+        default=1024,
+        ge=128,
+        le=8192,
+        description="Warning threshold in MB for runtime RSS memory usage",
+    )
+    reconnect_initial_delay: float = Field(
+        default=1.0,
+        gt=0.1,
+        le=10.0,
+        description="Initial delay in seconds for IPC reconnection backoff",
+    )
+    reconnect_max_delay: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description="Maximum delay in seconds for IPC reconnection backoff",
+    )
+    reconnect_backoff_factor: float = Field(
+        default=2.0,
+        ge=1.1,
+        le=5.0,
+        description="Multiplier factor for IPC reconnection exponential backoff",
+    )
+    reconnect_max_retries: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum consecutive reconnection attempts before paused state",
+    )
+
+    # Phase 18: System Tray, Activation & Desktop UX
+    tray_enabled: bool = Field(
+        default=True,
+        description="Enable Windows system tray presence on desktop",
+    )
+    tray_notifications_enabled: bool = Field(
+        default=True,
+        description="Enable desktop notifications from system tray/runtime",
+    )
+    hotkey_enabled: bool = Field(
+        default=False,
+        description="Enable global activation hotkey (Ctrl+Alt+Space). Disabled by default for safety.",
+    )
+    minimize_to_tray_on_close: bool = Field(
+        default=True,
+        description="Whether closing the GUI window hides it to tray instead of quitting",
+    )
+    startup_enabled: bool = Field(
+        default=False,
+        description="Whether user-level Windows Startup folder launcher is enabled",
+    )
+
+    # Phase 19: Activation Experience & Assistant UI
+    gui_compact_mode: bool = Field(
+        default=False,
+        description="Launch GUI in compact desktop assistant mode by default",
+    )
+    gui_always_on_top: bool = Field(
+        default=False,
+        description="Whether GUI window stays on top of other windows (default OFF)",
+    )
+    voice_cue_enabled: bool = Field(
+        default=True,
+        description="Whether spoken or audio cue is played when assistant enters listening state",
+    )
+
 
     @field_validator("log_level")
     @classmethod
@@ -320,6 +471,23 @@ class Settings(BaseSettings):
             path = BASE_DIR / path
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
+
+    @field_validator("runtime_dir", mode="before")
+    @classmethod
+    def resolve_runtime_dir(cls, value: str | Path) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @field_validator("runtime_host")
+    @classmethod
+    def validate_runtime_host(cls, value: str) -> str:
+        clean = value.strip().lower()
+        if clean not in {"127.0.0.1", "localhost"}:
+            raise ValueError(f"Security error: runtime_host must be localhost/127.0.0.1, got '{value}'")
+        return "127.0.0.1"
 
     @property
     def is_api_key_configured(self) -> bool:

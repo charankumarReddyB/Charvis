@@ -16,14 +16,21 @@ logger = get_logger("CHARVIS.ToolRouter")
 class ToolRouter:
     """Dispatches tool execution requests through safety verification and schema validation."""
 
+    registry: ToolRegistry
+    safety_manager: SafetyManager
+
     def __init__(
         self,
-        registry: ToolRegistry,
+        registry: Optional[ToolRegistry] = None,
         safety_manager: Optional[SafetyManager] = None,
     ) -> None:
-        self.registry = registry
+        self.registry = registry if registry is not None else ToolRegistry()
         self.safety_manager = safety_manager or SafetyManager()
         logger.debug("ToolRouter initialized with %d tools.", self.registry.count())
+
+    def register(self, tool: Any) -> None:
+        """Register a tool into router's registry."""
+        self.registry.register(tool)
 
     def execute_tool(
         self,

@@ -218,14 +218,54 @@ class ConfirmationDialog(tk.Toplevel):
             cursor="hand2",
             command=self._on_confirm,
         )
-        confirm_btn.pack(side=tk.RIGHT)
+        self._is_closed = False
+        self._confirm_btn = confirm_btn
+        self._cancel_btn = cancel_btn
+        self._check_timeout()
+
+    def _check_timeout(self) -> None:
+        """Periodically check if confirmation has expired."""
+        if self._is_closed:
+            return
+        if self.request.is_expired():
+            self._on_timeout()
+            return
+        self.after(1000, self._check_timeout)
+
+    def _on_timeout(self) -> None:
+        if self._is_closed:
+            return
+        self._is_closed = True
+        self.request.expire()
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
 
     def _on_confirm(self) -> None:
+        if self._is_closed:
+            return
+        self._is_closed = True
+        self._confirm_btn.config(state=tk.DISABLED)
+        self._cancel_btn.config(state=tk.DISABLED)
         self.request.approve()
-        self.grab_release()
+        try:
+            self.grab_release()
+        except Exception:
+            pass
         self.destroy()
 
     def _on_cancel(self) -> None:
+        if self._is_closed:
+            return
+        self._is_closed = True
+        self._confirm_btn.config(state=tk.DISABLED)
+        self._cancel_btn.config(state=tk.DISABLED)
         self.request.deny()
-        self.grab_release()
+        try:
+            self.grab_release()
+        except Exception:
+            pass
         self.destroy()
+

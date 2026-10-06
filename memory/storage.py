@@ -163,8 +163,62 @@ class SQLiteMemoryStorage(BaseMemoryStorage):
                 logger.error("Error creating memory item: %s", e)
                 raise MemoryStorageError(f"Failed to create memory: {e}") from e
 
+    def save(
+        self,
+        key: str,
+        value: str,
+        category: Union[str, MemoryCategory] = MemoryCategory.FACT,
+        confidence: float = 1.0,
+        source: Union[str, MemorySource] = MemorySource.USER_EXPLICIT,
+        importance: float = 0.5,
+        tags: Optional[List[str]] = None,
+    ) -> MemoryItem:
+        """Convenience method to save or update a memory item by key."""
+        if isinstance(category, str):
+            c_upper = category.upper()
+            if c_upper in ("FACT", "FACTS"):
+                category = MemoryCategory.FACT
+            elif c_upper in ("PREFERENCE", "USER_PREFERENCE"):
+                category = MemoryCategory.PREFERENCE
+            elif c_upper in ("PROJECT", "PROJECTS"):
+                category = MemoryCategory.PROJECT
+            elif c_upper in ("WORKFLOW", "WORKFLOWS"):
+                category = MemoryCategory.WORKFLOW
+            elif c_upper in ("CONTEXT", "CONTEXTS"):
+                category = MemoryCategory.CONTEXT
+            else:
+                try:
+                    category = MemoryCategory(category)
+                except ValueError:
+                    category = MemoryCategory.FACT
+        if isinstance(source, str):
+            try:
+                source = MemorySource(source)
+            except ValueError:
+                source = MemorySource.USER_EXPLICIT
+
+        existing = self.get_by_key(key, category=category)
+        if existing:
+            existing.value = value
+            existing.confidence = confidence
+            existing.importance = importance
+            if tags:
+                existing.tags = list(set(existing.tags + tags))
+            return self.update(existing)
+        else:
+            item = MemoryItem(
+                key=key,
+                value=value,
+                category=category,
+                source=source,
+                confidence=confidence,
+                importance=importance,
+                tags=tags or [],
+            )
+            return self.create(item)
+
     def get(self, item_id: str) -> Optional[MemoryItem]:
-        """Retrieve a memory item by ID."""
+        """Retrieve a memory item by ID, or fallback to key lookup if not found."""
         with self._lock:
             conn = self._get_connection()
             try:
@@ -173,7 +227,9 @@ class SQLiteMemoryStorage(BaseMemoryStorage):
                     (item_id,),
                 )
                 row = cur.fetchone()
-                return self._row_to_item(row) if row else None
+                if row:
+                    return self._row_to_item(row)
+                return self.get_by_key(item_id)
             except Exception as e:
                 logger.error("Error getting memory by ID %s: %s", item_id, e)
                 raise MemoryStorageError(f"Failed to get memory: {e}") from e

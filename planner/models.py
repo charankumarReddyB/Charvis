@@ -207,6 +207,10 @@ class TaskStep:
         self.order = val
 
     @property
+    def step_id(self) -> str:
+        return self.id
+
+    @property
     def retries_count(self) -> int:
         return self.retry_count
 

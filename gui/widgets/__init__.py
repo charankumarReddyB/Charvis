@@ -10,6 +10,7 @@ from gui.widgets.task_panel import TaskPanelWidget
 from gui.widgets.confirmation import ConfirmationDialog
 from gui.widgets.memory_view import MemoryViewWidget
 from gui.widgets.settings_view import SettingsViewWidget
+from gui.widgets.assistant import AssistantViewWidget
 
 __all__ = [
     "StatusWidget",
@@ -20,4 +21,5 @@ __all__ = [
     "ConfirmationDialog",
     "MemoryViewWidget",
     "SettingsViewWidget",
+    "AssistantViewWidget",
 ]
